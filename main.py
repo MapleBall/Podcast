@@ -17,9 +17,6 @@ import heapq
 from typing import Any, List, Mapping, Optional
 from pydantic import Field
 
-# 設置環境變數以禁用 tokenizers 的並行處理
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 k = 5
 fetch_k = 100
 
@@ -63,7 +60,7 @@ def retrieve_from_multiple_stores(vectorstores, query, k=5, fetch_k=100):
 
 ### 定義ollama類別
 class ChatOllama(BaseLLM):
-    model_name: str = "llama3:8b"
+    model_name: str = "llama3.1:latest"
     url: str = "http://localhost:11434/api/generate"
 
     def _call(
@@ -109,15 +106,17 @@ class ChatOllama(BaseLLM):
     def _llm_type(self) -> str:
         return "chat_ollama"
 
-
-
 def setup_qa_chain(use_cpu=False):
-    
+    # groq_api_key = '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'
+    # model = 'llama-3.1-8b-instant'
+    # ollama_chat = ChatGroq(groq_api_key=groq_api_key, model_name=model)
     ollama_chat = ChatOllama(model_name='llama3:8b') #可換模型
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True
+    )
     
-    # 使用新的FAISS檢索邏輯，並傳入 use_cpu 參數
-    parent_directory = r"C:\Users\stanl\OneDrive\文件\GitHub\Podcast-\VectoreStore_1"  # 更新為您的向量庫目錄
+    parent_directory = r"D:\Podcast_mp3_save\VectoreStore_1"  # 更新為您的向量庫目錄
     embeddings = create_embeddings(use_cpu)
     vectorstores = load_vectorstores_from_directory(parent_directory, embeddings)
     
@@ -130,39 +129,53 @@ def setup_qa_chain(use_cpu=False):
     
         def _get_relevant_documents(self, query):
             results = retrieve_from_multiple_stores(self.vectorstores, query, k=k, fetch_k=fetch_k)
-            return results  # 這裡應該直接返回文檔列表，而不是元組
+            return results
 
     custom_retriever = CustomRetriever(vectorstores)
 
+    template = """您是一個專業的 Podcast 搜尋引擎助手。您的任務是使用 RAG（檢索增強生成）技術回答有關 Podcast 節目內容的問題。請仔細閱讀以下指南，並據此回答問題。
 
-
-    template = """我將作為您的Podcast搜尋引擎。當您向我詢問有關特定Podcast節目或內容的問題時，我將使用RAG（檢索增強生成）技術來回答您的問題。請注意，如果RAG檢索庫中沒有您所需的內容，我將告知您「RAG資料庫內沒有您所需的內容」。我希望您根據這些條件提問。
-
-您的第一句話是「嗨」。
-
-檢索資料信息（包括節目標題）：
-{context}
-
-聊天歷史：
+當前對話歷史：
 {chat_history}
 
-當前問題：
+檢索到的相關資訊：
+{context}
+
+使用者當前問題：
 {question}
 
 回答指南：
-1. **問題處理**：首先對當前問題進行清晰的 prompt engineering，確保理解問題的核心需求。
-2. **信息使用**：僅使用檢索資料中的信息來回答問題。如果資料不足以回答問題，請直接回答「RAG 資料庫沒有您想要的資料」。
-3. **回答內容**：
-   - **具體內容要點**：回答應包括具體的內容要點。
-   - **時間戳**：每個內容要點應附上對應的時間戳。請使用完整的格式，例如（MM:SS~MM:SS）。如果只有一個時間點，則使用（MM:SS）。
-   - **節目標題**：最後應提供節目標題（格式：（節目標題：[完整標題]））。
+1. **上下文理解**：
+   - 仔細分析當前問題與之前對話的關聯。
+   - 如果當前問題是對之前對話的延續，請確保利用先前的資訊來提供連貫的回答。
+
+2. **資訊使用**：
+   - 主要使用檢索到的資訊（{context}）來回答問題。
+   - 如果檢索的資訊不足，可以參考之前的對話歷史來補充。
+   - 若兩者都無法提供足夠資訊，請回答「抱歉，RAG 資料庫中沒有足夠的資訊來回答這個問題」。
+
+3. **回答結構**：
+   - 具體內容要點：提供明確、相關的內容要點。
+   - 時間戳：為每個內容要點提供時間戳，格式為（MM:SS~MM:SS）或（MM:SS）。
+   - 來源區分：清楚區分不同 Podcast 節目的觀點，並提供該集標題。
+   - 節目標題：在回答末尾提供完整的節目標題，格式為（節目標題：[完整標題]）。
+
 4. **回答格式示例**：
-   - 「根據檢索資料，[內容摘要1]（時間戳）。此外，[內容摘要2]（時間戳）。[如有更多內容，繼續列舉]。（節目標題：[完整標題]）」
-5. **回答語言和風格**：回答要清楚詳細，使用繁體中文。
-6. **資訊限制**：不要添加任何檢索資料中沒有的信息。
-7. **格式問題**: 請不要使用刪除線或任何其他特殊格式標記在你的回答中。
-8. **記憶**: 如果使用者希望接續前面的問答再次提問，系統應該能夠檢索並提供對話紀錄（chat_history），並根據這些紀錄回答使用者的問題。
-請根據上述指南回答問題：
+   「根據檢索資料和先前的對話，[內容摘要1]（時間戳）。此外，[內容摘要2]（時間戳）。[繼續列舉其他相關內容]。（節目標題：[完整標題]）」
+
+5. **語言和風格**：
+   - 使用繁體中文回答。
+   - 保持清晰、詳細且專業的語氣。
+
+6. **資訊限制**：
+   - 僅使用檢索到的資料和對話歷史中的資訊。
+   - 不要添加任何未在這些來源中提及的資訊。
+
+7. **格式注意事項**：
+   - 不使用刪除線或其他特殊格式標記。
+   - 保持回答的結構清晰易讀。
+
+請根據以上指南，回答使用者的問題：
 """
 
     document_prompt = PromptTemplate(
@@ -175,6 +188,7 @@ def setup_qa_chain(use_cpu=False):
         llm=ollama_chat,
         retriever=custom_retriever,
         memory=memory,
+        verbose=True,  # 添加這行來幫助調試
         combine_docs_chain_kwargs={
             "prompt": prompt,
             "document_variable_name": "context",
@@ -184,7 +198,6 @@ def setup_qa_chain(use_cpu=False):
 
     return qa_chain, custom_retriever
 
-# 修改主函數以接受 use_cpu 參數
 def main(use_cpu=False):
     qa_chain, retriever = setup_qa_chain(use_cpu)
 
@@ -200,63 +213,47 @@ def main(use_cpu=False):
 
     def chat_function(message, history):
         try:
-            # 檢查新的問題是否與對話歷史相關
-            is_related = check_relevance(message, history)
+            # 使用檢索器獲取相關文檔
+            results = retriever._get_relevant_documents(message)
 
-            if not is_related:
-                # 不相關則清除
-                qa_chain.memory.clear()
-
-            results = retriever.invoke(message)
-            response = qa_chain.invoke({"question": message, "chat_history": history if is_related else []})
+            # 使用鏈進行預測
+            response = qa_chain({"question": message})
             answer = response['answer']
 
+            # 使用集合來存儲唯一的 (episode_name, podcast_name) 組合
             unique_sources = set()
             for result in results:
                 episode_name = result.metadata.get('episode_name', 'Unknown Episode')
                 podcast_name = result.metadata.get('Podcast_name', 'Unknown Podcast')
                 unique_sources.add((episode_name, podcast_name))
 
+            # 格式化 sources 字符串
             sources_str = "\n可參考下方節目集數：\n"
             for idx, (episode_name, podcast_name) in enumerate(unique_sources, 1):
                 sources_str += f"Result {idx}: {episode_name}, {podcast_name}\n"
 
+            # 將答案和來源信息合併為一個字符串
             full_response = f"{answer}\n\n{sources_str}"
+            # 打印記憶內容以進行調試
+            print("Current memory contents:")
+            print(qa_chain.memory.chat_memory.messages)
 
             return full_response
 
         except Exception as e:
             error_message = f"發生錯誤: {str(e)}\n很抱歉，我無法處理您的問題。請再試一次或換個問題。"
             return error_message
-        
-    # 檢查新對話與對話歷史是否相關 (關鍵字相似度比較)
-    def check_relevance(new_question, history):
-        
-        if not history:
-            return False
-
-        last_question = history[-1][0]  # 獲取最後一個問題
-        
-        # 關鍵字重疊性比較是否相關
-        keywords_last = set(last_question.lower().split())
-        keywords_new = set(new_question.lower().split())
-        
-        overlap = len(keywords_last.intersection(keywords_new))
-        threshold = min(len(keywords_last), len(keywords_new)) * 0.3  # 閾值:30%
-        
-        return overlap >= threshold
 
     with gr.Blocks() as iface:
-        gr.Markdown(f"## 目前資料庫中的節目有：\n{get_program_list('C:/Users/stanl/OneDrive/文件/GitHub/Podcast-/VectoreStore_sample')}\n\n請在下方提問：")
+        gr.Markdown(f"## 目前資料庫中的節目有：\n{get_program_list('/media/starklab/BACKUP/Podcast_project/轉錄文本存放區')}\n\n請在下方提問：")
 
         chatbot = gr.ChatInterface(
             chat_function,
             title="Podcast Q&A Assistant",
             description="Ask questions about podcast content, and I'll provide answers based on the retrieved information.",
             theme="soft",
-            # 設定一些快捷問題供使用者選擇
             examples=[
-                "還有甚麼節目與這個主題相關",
+                "林書豪這個賽季遇到了什麼困難？",
                 "請告訴我這個節目討論了哪些主題？",
                 "這集節目中有提到哪些重要的觀點？"
             ],
