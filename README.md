@@ -22,7 +22,7 @@ ollama list
 1. 安裝 PyTorch:
    請訪問 [PyTorch 官網](https://pytorch.org/get-started/locally/) 並根據您的系統和 CUDA 版本選擇適當的安裝指令。
    
-2. 安装 ffmpeg
+2. 安装 ffmpeg (For Voice2Text)
    若ffmpeg已安裝則跳過。
 
 ### Ubuntu/Debian 系統
