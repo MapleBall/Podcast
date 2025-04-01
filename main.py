@@ -7,7 +7,7 @@ from langchain.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLMResult
 from langchain_community.vectorstores import FAISS
 from langchain.schema.runnable import RunnablePassthrough
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 import os
 import torch
 import gradio as gr
